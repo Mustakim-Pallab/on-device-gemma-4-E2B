@@ -1,0 +1,146 @@
+# 🚀 Gemma-4-E2B-it: High-Performance On-Device Chat
+
+A blazingly fast, multi-user chat and agent application powered by the **Gemma-4-E2B-it** model. Designed for low-latency interactions, this project leverages a highly optimized architecture combining `llama.cpp` for native inference, `FastAPI` for concurrent request handling, and `Gradio` for a premium user interface. 
+
+It is built specifically to support complex survey and customer service agents while maintaining strict response formats and sub-second latencies.
+
+## ✨ Key Features
+
+- ⚡ **Ultra-Low Latency**: Optimized KV-cache management and slot pinning ensure near-instantaneous responses (TTFT < 100ms on RTX 4090).
+- 🧠 **Pre-Warming System**: Automatically caches system prompts at startup, drastically reducing processing time for the first user interaction.
+- 👥 **High Concurrency**: The asynchronous FastAPI proxy efficiently handles multiple simultaneous user sessions without bottlenecking the single-threaded inference engine.
+- 🛠️ **Multi-Agent Support**: Easily switch between predefined system prompts (Survey Agent, Loan Reminder, Support Desk) via environment variables.
+- 📊 **Built-in Benchmarking**: Comprehensive tools to measure Turn-1 TTFT, steady-state latency, and generation speeds under simulated concurrent loads.
+
+---
+
+## 🏗️ Architecture
+
+The system is decoupled into two primary layers to maximize throughput:
+
+1. **Inference Backend (`llama.cpp`)**: A bare-metal, highly optimized C++ server handling the heavy lifting of LLM generation. Supports both CPU (via Docker) and native GPU (CUDA) execution.
+2. **API Proxy & State Manager (`FastAPI`)**: A Python middleware layer that isolates user sessions, manages KV cache slots intelligently, and enforces strict generation bounds to prevent model hallucination.
+
+---
+
+## 🔁 Inference Backend Evolution
+
+This project started with `litert-lm` for local Gemma inference because it provides a simple Python API and strong single-session KV-cache behavior. That made it useful for validating stateful multi-turn chat and measuring simple session latency.
+
+During concurrency testing, the architecture was migrated to `llama.cpp` server. The server-based approach gives finer control over streaming responses, slot-based KV-cache reuse, GPU execution, and concurrent multi-user serving.
+
+| Backend | Strength | Limitation | Role in Project |
+|---|---|---|---|
+| `litert-lm` | Simple Python API and fast single-session stateful chat | Limited control over concurrent multi-session serving | Used for early prototype and KV-cache behavior validation |
+| `llama.cpp` server | Slot pinning, streaming API, GPU serving, and better concurrency control | More setup complexity | Used for the final optimized multi-user architecture |
+
+This progression reflects the main design tradeoff: `litert-lm` is excellent for quickly validating local Gemma sessions, while `llama.cpp` server is better suited for production-style concurrent serving.
+
+---
+
+## 💻 Getting Started (Local CPU/Docker)
+
+The fastest way to test the application locally is via Docker Compose.
+
+### Prerequisites
+- Docker & Docker Compose
+- The quantized model file: `google_gemma-4-E2B-it-Q4_K_M.gguf`
+
+### Setup
+
+1. **Clone the repository**:
+   ```bash
+   git clone https://github.com/nafeesrakib22/gemma-on-device.git
+   cd gemma-on-device
+   ```
+
+2. **Prepare the Model**:
+   Place your `.gguf` model file inside the `models/` directory.
+
+3. **Launch the Stack**:
+   ```bash
+   docker compose up -d
+   ```
+   *This spins up both the `llama.cpp` inference server and the `FastAPI` backend.*
+
+---
+
+## 🚀 Getting Started (RunPod / GPU Deployment)
+
+For production performance or benchmarking, deploy directly on a GPU instance (e.g., RunPod RTX 4090).
+
+1. **Clone & Setup Environment**:
+   ```bash
+   git clone https://github.com/nafeesrakib22/gemma-on-device.git
+   cd gemma-on-device
+   python3 -m venv gemma-venv
+   source gemma-venv/bin/activate
+   pip install -r requirements.txt
+   ```
+
+2. **Build `llama.cpp` with CUDA** (Ensure CUDA toolkit is installed):
+   ```bash
+   cd ~
+   git clone https://github.com/ggml-org/llama.cpp
+   cd llama.cpp
+   cmake -B build -DGGML_CUDA=ON
+   cmake --build build --config Release -j$(nproc)
+   ```
+
+3. **Download the Model** (Directly to the pod):
+   ```bash
+   pip install huggingface_hub -q
+   python3 -c 'from huggingface_hub import hf_hub_download; hf_hub_download(repo_id="bartowski/google_gemma-4-E2B-it-GGUF", filename="google_gemma-4-E2B-it-Q4_K_M.gguf", local_dir="/workspace/models")'
+   ```
+
+4. **Start the Services**:
+   We provide a convenience script to launch the GPU inference server and the FastAPI proxy sequentially.
+   ```bash
+   # Set the path to your model and start
+   MODEL_PATH=/workspace/models/google_gemma-4-E2B-it-Q4_K_M.gguf ./start.sh
+   ```
+
+---
+
+## 📈 Benchmarking
+
+The repository includes a benchmarking suite for measuring cold-start latency, steady-state latency, punctuation latency, generation time, GPU utilization, and VRAM usage under concurrent load.
+
+### Benchmark Configuration
+
+| Parameter | Value |
+|---|---|
+| Model | `google_gemma-4-E2B-it-Q4_K_M.gguf` |
+| Context | 16,384 tokens |
+| KV Slots | 10 |
+| GPU | NVIDIA GeForce RTX 4090 (24 GB) |
+| Warmup | Disabled (cold) |
+
+### Benchmark Results
+
+| Concurrency | Avg Turn-1 TTFT | Avg Steady TTFT | Avg TTF Punc | Avg Gen Time | Peak GPU Util | Peak VRAM |
+|---:|---:|---:|---:|---:|---:|---:|
+| 1 | 0.038s | 0.070s | 0.102s | 0.556s | 62.0% | 2718 MiB |
+| 5 | 0.262s | 0.922s | 1.057s | 2.632s | 93.0% | 2722 MiB |
+| 10 | 0.983s | 3.412s | 3.575s | 5.131s | 96.0% | 2722 MiB |
+
+These results show that the KV-cache slot pinning keeps single-session steady-state TTFT under 100ms, while the FastAPI proxy can scale to 10 concurrent sessions with stable VRAM usage around 2.7 GB.
+
+**To run the benchmark (e.g., testing 1, 5, and 10 concurrent users):**
+```bash
+python run_benchmark.py --levels 1,5,10
+```
+
+*Note: For accurate cold-start (Turn 1) measurements, launch the server with `SKIP_WARMUP=1 ./start.sh`.*
+
+---
+
+## 📁 Project Structure
+
+- `server.py`: The core FastAPI proxy, managing sessions and KV cache slots.
+- `start.sh`: Production startup script for GPU environments.
+- `docker-compose.yml`: Local CPU deployment configuration.
+- `prompts.py`: Defines the personas and system instructions for various agents.
+- `run_benchmark.py`: Multi-concurrency benchmarking orchestrator.
+- `benchmark.py`: Core request simulation and metrics gathering logic.
+- `app.py`: (Optional) Gradio-based web interface for manual testing.

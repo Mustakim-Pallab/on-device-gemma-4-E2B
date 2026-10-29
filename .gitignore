@@ -1,0 +1,60 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual Environment
+gemma-venv/
+venv/
+.venv/
+ENV/
+*venv/
+*.venv/
+
+# Gradio
+.gradio/
+
+# Models (Large files should not be in git)
+*.litertlm
+.litert-lm/
+
+# Profiling and Temp
+default.profraw
+*.log
+
+# OS/IDEs
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+#env files
+.env 
+#data files
+benchmark_report.csv
+results.json
+models/*
+transcriptions/
+benchmark_*.csv
+benchmark_cer_report.csv
+benchmark_cer_report.csv
+benchmark_report_gemma_e2b.csv
+conversations/
+
